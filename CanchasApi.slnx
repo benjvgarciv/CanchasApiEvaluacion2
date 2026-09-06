@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CanchasApi/CanchasApi.csproj" />
+  <Project Path="CanchasApi.Tests/CanchasApi.Tests.csproj" />
+</Solution>

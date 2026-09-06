@@ -1,0 +1,6 @@
+@CanchasApi_HostAddress = http://localhost:5098
+
+GET {{CanchasApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

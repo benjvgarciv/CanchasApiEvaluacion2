@@ -40,8 +40,68 @@ export const ReservasSection: React.FC<ReservasSectionProps> = ({
     filterEstado ? r.estado === filterEstado : true
   );
 
-  const getBadgeStyle = (estado: EstadoReserva): React.CSSProperties => {
-    switch (estado) {
+  // Helper para evaluar el estado dinámico en tiempo real según fecha y hora
+  const getEstadoDinamico = (reserva: Reserva): string => {
+    // Si la reserva fue cancelada administrativamente, mantener Cancelada
+    if (reserva.estado === 'Cancelada') {
+      return 'Cancelada';
+    }
+
+    try {
+      const ahora = new Date().getTime();
+      const parseLocal = (isoStr: string) => {
+        if (!isoStr) return 0;
+        const cleanStr = isoStr.replace('Z', '').split('.')[0];
+        const [fechaPart, horaPart] = cleanStr.split('T');
+        if (fechaPart && horaPart) {
+          const [y, m, d] = fechaPart.split('-').map(Number);
+          const [hh, mm, ss] = horaPart.split(':').map(Number);
+          return new Date(y, m - 1, d, hh, mm || 0, ss || 0).getTime();
+        }
+        return new Date(isoStr).getTime();
+      };
+
+      const inicio = parseLocal(reserva.fechaInicio);
+      const fin = parseLocal(reserva.fechaFin);
+
+      if (fin > 0 && ahora > fin) {
+        return 'Finalizada';
+      }
+      if (inicio > 0 && fin > 0 && ahora >= inicio && ahora <= fin) {
+        return 'En Juego';
+      }
+    } catch {
+      // Fallback al estado registrado
+    }
+
+    return reserva.estado;
+  };
+
+  const getBadgeStyle = (estadoVisual: string): React.CSSProperties => {
+    switch (estadoVisual) {
+      case 'En Juego':
+        return {
+          backgroundColor: '#ede9fe',
+          color: '#6d28d9',
+          border: '1px solid #ddd6fe',
+          padding: '0.2rem 0.65rem',
+          borderRadius: '9999px',
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.3rem',
+        };
+      case 'Finalizada':
+        return {
+          backgroundColor: '#f1f5f9',
+          color: '#64748b',
+          border: '1px solid #cbd5e1',
+          padding: '0.2rem 0.65rem',
+          borderRadius: '9999px',
+          fontSize: '0.75rem',
+          fontWeight: 600,
+        };
       case 'Confirmada':
         return {
           backgroundColor: '#dcfce7',
@@ -88,6 +148,15 @@ export const ReservasSection: React.FC<ReservasSectionProps> = ({
 
   const formatearFecha = (fechaStr: string) => {
     try {
+      if (!fechaStr) return '';
+      // Si la fecha viene en formato ISO (ej. YYYY-MM-DDTHH:mm:ss o con .000Z), formatear de forma neutra y local
+      const cleanStr = fechaStr.replace('Z', '').split('.')[0];
+      const [fechaPart, horaPart] = cleanStr.split('T');
+      if (fechaPart && horaPart) {
+        const [year, month, day] = fechaPart.split('-');
+        const [hh, mm] = horaPart.split(':');
+        return `${day}/${month}/${year} ${hh}:${mm} hrs`;
+      }
       const fecha = new Date(fechaStr);
       return fecha.toLocaleString('es-CL', {
         dateStyle: 'medium',
@@ -463,7 +532,15 @@ export const ReservasSection: React.FC<ReservasSectionProps> = ({
                         )}
                       </td>
                       <td>
-                        <span style={getBadgeStyle(r.estado)}>{r.estado}</span>
+                        {(() => {
+                          const estadoVisual = getEstadoDinamico(r);
+                          return (
+                            <span style={getBadgeStyle(estadoVisual)}>
+                              {estadoVisual === 'En Juego' && '⏱️ '}
+                              {estadoVisual}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* 2. Botones de Gestión Rápida */}

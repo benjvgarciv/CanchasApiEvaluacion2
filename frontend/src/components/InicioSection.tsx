@@ -291,7 +291,7 @@ export const InicioSection: React.FC<InicioSectionProps> = ({
           <h4 style={{ margin: 0, fontSize: '1.1rem' }}>Horarios de Atención y Reservas</h4>
         </div>
         <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.92rem', lineHeight: 1.6 }}>
-          Nuestras canchas atienden de <strong>Lunes a Domingo de 08:00 a 23:00 hrs</strong>. Puedes
+          Nuestras canchas atienden de <strong>Lunes a Domingo de 08:00 a 00:00 hrs.</strong> Puedes
           reservar bloques horarios de 1 o más horas para fútbol 5, fútbol 7 o pádel con iluminación LED
           y estacionamiento privado garantizado.
         </p>

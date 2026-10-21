@@ -8,6 +8,7 @@ interface SedesSectionProps {
   isLoading: boolean;
   errorMessage: string | null;
   canManage: boolean;
+  isAdmin?: boolean;
   onRefresh: () => Promise<void>;
 }
 
@@ -21,9 +22,11 @@ export const SedesSection: React.FC<SedesSectionProps> = ({
   sedes,
   isLoading,
   errorMessage,
-  canManage,
+  canManage: _canManage,
+  isAdmin = false,
   onRefresh,
 }) => {
+  const puedeModificar = isAdmin;
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState<SedeRequest>(INITIAL_FORM);
@@ -194,7 +197,7 @@ export const SedesSection: React.FC<SedesSectionProps> = ({
           </p>
         </div>
 
-        {canManage && (
+        {puedeModificar && (
           <button onClick={handleAbrirCrear} className="btn-primary" style={{ gap: '0.5rem' }}>
             <Plus size={18} />
             Nueva Sede
@@ -266,7 +269,7 @@ export const SedesSection: React.FC<SedesSectionProps> = ({
             La base de datos no contiene sedes aún. Puedes crearlas manualmente o utilizar el cargador inicial para poblarla automáticamente.
           </p>
 
-          {canManage && (
+          {puedeModificar && (
             <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
               <button
                 onClick={handleSeedData}
@@ -300,7 +303,7 @@ export const SedesSection: React.FC<SedesSectionProps> = ({
                   <th>Nombre</th>
                   <th>Dirección</th>
                   <th>Teléfono</th>
-                  {canManage && <th style={{ textAlign: 'right' }}>Acciones</th>}
+                  {puedeModificar && <th style={{ textAlign: 'right' }}>Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -328,7 +331,7 @@ export const SedesSection: React.FC<SedesSectionProps> = ({
                         <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>Sin teléfono</span>
                       )}
                     </td>
-                    {canManage && (
+                    {puedeModificar && (
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button
                           onClick={() => handleAbrirEditar(s)}
@@ -376,7 +379,7 @@ export const SedesSection: React.FC<SedesSectionProps> = ({
       )}
 
       {/* MODAL CREAR / EDITAR SEDE */}
-      {isModalOpen && canManage && (
+      {isModalOpen && puedeModificar && (
         <div className="portal-modal-backdrop" role="dialog" aria-modal="true">
           <div className="portal-modal-card">
             <div

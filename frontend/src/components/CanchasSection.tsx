@@ -7,6 +7,7 @@ import type {
   TipoCancha,
   EstadoCancha,
   ReservaCreateRequest,
+  Reserva,
 } from '../types/cancha';
 import { canchasService } from '../api/canchasService';
 import { Plus, Search, Filter, Edit2, Trash2, AlertCircle, RefreshCw, Calendar, CheckCircle } from 'lucide-react';
@@ -15,9 +16,11 @@ interface CanchasSectionProps {
   canchas: Cancha[];
   sedes: Sede[];
   tiposCancha: TipoCancha[];
+  reservas?: Reserva[];
   isLoading: boolean;
   errorMessage: string | null;
   canManage: boolean;
+  isAdmin?: boolean;
   onRefresh: () => Promise<void>;
   onNavigateToTab: (tab: 'sedes' | 'tipos' | 'reservas') => void;
 }
@@ -42,12 +45,62 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
   canchas,
   sedes,
   tiposCancha,
+  reservas = [],
   isLoading,
   errorMessage,
   canManage,
+  isAdmin = false,
   onRefresh,
   onNavigateToTab,
 }) => {
+  // Solo los administradores pueden crear, editar o eliminar canchas
+  const puedeModificar = isAdmin;
+  // Helper para verificar si una cancha se encuentra ocupada por una reserva activa en este minuto
+  const getOcupacionCancha = (canchaId: number): { ocupada: boolean; hastaHora: string } => {
+    try {
+      const ahora = new Date().getTime();
+      const parseLocal = (isoStr: string) => {
+        if (!isoStr) return 0;
+        const cleanStr = isoStr.replace('Z', '').split('.')[0];
+        const [fechaPart, horaPart] = cleanStr.split('T');
+        if (fechaPart && horaPart) {
+          const [y, m, d] = fechaPart.split('-').map(Number);
+          const [hh, mm, ss] = horaPart.split(':').map(Number);
+          return new Date(y, m - 1, d, hh, mm || 0, ss || 0).getTime();
+        }
+        return new Date(isoStr).getTime();
+      };
+
+      const formatHora = (isoStr: string) => {
+        const cleanStr = isoStr.replace('Z', '').split('.')[0];
+        const horaPart = cleanStr.split('T')[1];
+        if (horaPart) {
+          const [hh, mm] = horaPart.split(':');
+          return `${hh}:${mm}`;
+        }
+        return '';
+      };
+
+      const reservaEnCurso = reservas.find((r) => {
+        if (r.canchaId !== canchaId) return false;
+        if (r.estado === 'Cancelada') return false;
+        const inicio = parseLocal(r.fechaInicio);
+        const fin = parseLocal(r.fechaFin);
+        return inicio > 0 && fin > 0 && ahora >= inicio && ahora <= fin;
+      });
+
+      if (reservaEnCurso) {
+        return {
+          ocupada: true,
+          hastaHora: formatHora(reservaEnCurso.fechaFin),
+        };
+      }
+    } catch {
+      // Ignorar error y retornar false
+    }
+
+    return { ocupada: false, hastaHora: '' };
+  };
   // Filtros locales
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterSede, setFilterSede] = useState<string>('');
@@ -65,12 +118,36 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
   const [canchaReservar, setCanchaReservar] = useState<Cancha | null>(null);
   const [reservaFecha, setReservaFecha] = useState<string>('');
   const [reservaHoraInicio, setReservaHoraInicio] = useState<string>('18:00');
+  const [reservaBloqueHoras, setReservaBloqueHoras] = useState<number>(1);
   const [reservaHoraFin, setReservaHoraFin] = useState<string>('19:00');
   const [reservaSubmitting, setReservaSubmitting] = useState<boolean>(false);
   const [reservaError, setReservaError] = useState<string | null>(null);
 
   // Feedback general
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const calcularHoraFin = (inicioStr: string, duracion: number): string => {
+    const [h, m] = inicioStr.split(':').map(Number);
+    const horaFinNum = h + duracion;
+    if (horaFinNum >= 24) {
+      return '00:00';
+    }
+    const hStr = horaFinNum.toString().padStart(2, '0');
+    const mStr = m.toString().padStart(2, '0');
+    return `${hStr}:${mStr}`;
+  };
+
+  const handleCambiarHoraInicio = (nuevaHoraInicio: string) => {
+    setReservaHoraInicio(nuevaHoraInicio);
+    const nuevaFin = calcularHoraFin(nuevaHoraInicio, reservaBloqueHoras);
+    setReservaHoraFin(nuevaFin);
+  };
+
+  const handleCambiarBloque = (nuevoBloque: number) => {
+    setReservaBloqueHoras(nuevoBloque);
+    const nuevaFin = calcularHoraFin(reservaHoraInicio, nuevoBloque);
+    setReservaHoraFin(nuevaFin);
+  };
 
   const canchasFiltradas = canchas.filter((c) => {
     const matchNumero = c.numero.toString().includes(searchTerm.trim());
@@ -195,12 +272,16 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
   const handleAbrirReserva = (cancha: Cancha) => {
     setCanchaReservar(cancha);
     setReservaError(null);
-    // Establecer fecha por defecto para mañana
     const manana = new Date();
     manana.setDate(manana.getDate() + 1);
-    const fechaISO = manana.toISOString().split('T')[0];
-    setReservaFecha(fechaISO);
+    const anio = manana.getFullYear();
+    const mes = (manana.getMonth() + 1).toString().padStart(2, '0');
+    const dia = manana.getDate().toString().padStart(2, '0');
+    const fechaLocal = `${anio}-${mes}-${dia}`;
+
+    setReservaFecha(fechaLocal);
     setReservaHoraInicio('18:00');
+    setReservaBloqueHoras(1);
     setReservaHoraFin('19:00');
     setReservaModalOpen(true);
   };
@@ -209,15 +290,6 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
     setReservaModalOpen(false);
     setCanchaReservar(null);
     setReservaError(null);
-  };
-
-  const calcularHoras = (): number => {
-    if (!reservaHoraInicio || !reservaHoraFin) return 1;
-    const [hInicio, mInicio] = reservaHoraInicio.split(':').map(Number);
-    const [hFin, mFin] = reservaHoraFin.split(':').map(Number);
-    const minutos = hFin * 60 + mFin - (hInicio * 60 + mInicio);
-    const horas = minutos / 60;
-    return horas > 0 ? horas : 1;
   };
 
   const handleConfirmarReserva = async (e: React.FormEvent) => {
@@ -229,20 +301,27 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
       setReservaError('Por favor selecciona la fecha de la reserva.');
       return;
     }
-    if (reservaHoraInicio >= reservaHoraFin) {
-      setReservaError('La hora de inicio debe ser anterior a la hora de fin.');
-      return;
-    }
 
+    // Formato local neutro YYYY-MM-DDTHH:mm:ss sin desfase UTC
     const fechaInicioStr = `${reservaFecha}T${reservaHoraInicio}:00`;
-    const fechaFinStr = `${reservaFecha}T${reservaHoraFin}:00`;
+    let fechaFinStr = `${reservaFecha}T${reservaHoraFin}:00`;
+
+    // Si termina a las 00:00 del día siguiente
+    if (reservaHoraFin === '00:00') {
+      const fechaObj = new Date(`${reservaFecha}T00:00:00`);
+      fechaObj.setDate(fechaObj.getDate() + 1);
+      const anioSig = fechaObj.getFullYear();
+      const mesSig = (fechaObj.getMonth() + 1).toString().padStart(2, '0');
+      const diaSig = fechaObj.getDate().toString().padStart(2, '0');
+      fechaFinStr = `${anioSig}-${mesSig}-${diaSig}T00:00:00`;
+    }
 
     setReservaSubmitting(true);
     try {
       const payload: ReservaCreateRequest = {
         canchaId: canchaReservar.id,
-        fechaInicio: new Date(fechaInicioStr).toISOString(),
-        fechaFin: new Date(fechaFinStr).toISOString(),
+        fechaInicio: fechaInicioStr,
+        fechaFin: fechaFinStr,
       };
 
       await canchasService.crearReserva(payload);
@@ -412,8 +491,8 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
           </div>
         </div>
 
-        {/* Criterio 6: Botón Crear visible solo para Administrador o Trabajador */}
-        {canManage && (
+        {/* Botón Crear visible solo para Administrador */}
+        {puedeModificar && (
           <button
             id="btn-crear-cancha"
             onClick={handleAbrirCrear}
@@ -560,12 +639,12 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
           </h4>
           <p style={{ maxWidth: '460px', margin: '0 auto 1.5rem', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
             {canchas.length === 0
-              ? canManage
+              ? puedeModificar
                 ? 'Comienza creando la primera cancha utilizando el botón "+ Nueva Cancha".'
                 : 'El catálogo se encuentra vacío actualmente.'
               : 'Prueba cambiando o limpiando los términos de búsqueda o filtros.'}
           </p>
-          {canManage && canchas.length === 0 && sedes.length > 0 && tiposCancha.length > 0 && (
+          {puedeModificar && canchas.length === 0 && sedes.length > 0 && tiposCancha.length > 0 && (
             <button onClick={handleAbrirCrear} className="btn-primary">
               Crear Primera Cancha
             </button>
@@ -612,7 +691,30 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
                       ${c.precioPorHora.toLocaleString('es-CL')} / hr
                     </td>
                     <td>
-                      <span style={getBadgeStyle(c.estado)}>{c.estado}</span>
+                      {(() => {
+                        const ocupacion = getOcupacionCancha(c.id);
+                        if (canManage && c.estado === 'Disponible' && ocupacion.ocupada) {
+                          return (
+                            <span
+                              style={{
+                                backgroundColor: '#ede9fe',
+                                color: '#6d28d9',
+                                border: '1px solid #ddd6fe',
+                                padding: '0.2rem 0.65rem',
+                                borderRadius: '9999px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                              }}
+                            >
+                              ⚽ Ocupada (hasta {ocupacion.hastaHora} hrs)
+                            </span>
+                          );
+                        }
+                        return <span style={getBadgeStyle(c.estado)}>{c.estado}</span>;
+                      })()}
                     </td>
 
                     {/* Acciones diferenciadas por rol */}
@@ -637,8 +739,8 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
                         </button>
                       )}
 
-                      {/* Criterio 6: Botones de Editar y Eliminar solo para Administrador o Trabajador */}
-                      {canManage && (
+                      {/* Botones de Editar y Eliminar solo para Administrador */}
+                      {puedeModificar && (
                         <>
                           <button
                             onClick={() => handleAbrirEditar(c)}
@@ -762,6 +864,37 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
                 />
               </div>
 
+              {/* Botones de Bloques Interactivos de Duración */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ marginBottom: '0.4rem' }}>Duración de la Reserva *</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                  {[1, 2, 3].map((horas) => {
+                    const isSelected = reservaBloqueHoras === horas;
+                    return (
+                      <button
+                        key={horas}
+                        type="button"
+                        onClick={() => handleCambiarBloque(horas)}
+                        style={{
+                          minHeight: '44px',
+                          padding: '0.5rem',
+                          fontSize: '0.9rem',
+                          fontWeight: 700,
+                          borderRadius: 'var(--radius-md)',
+                          border: isSelected ? '2px solid var(--color-primary)' : '1.5px solid var(--color-border)',
+                          backgroundColor: isSelected ? 'var(--color-primary-light)' : '#ffffff',
+                          color: isSelected ? 'var(--color-primary)' : 'var(--color-text-main)',
+                          cursor: 'pointer',
+                          transition: 'all var(--transition-fast)',
+                        }}
+                      >
+                        {horas} {horas === 1 ? 'Hora' : 'Horas'}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Selectores de Horario */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
                 <div>
@@ -769,9 +902,13 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
                   <select
                     id="reserva-hora-inicio"
                     value={reservaHoraInicio}
-                    onChange={(e) => setReservaHoraInicio(e.target.value)}
+                    onChange={(e) => handleCambiarHoraInicio(e.target.value)}
                   >
-                    {['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'].map((h) => (
+                    {[
+                      '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00',
+                      '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00',
+                      '22:00', '23:00',
+                    ].map((h) => (
                       <option key={h} value={h}>
                         {h} hrs
                       </option>
@@ -780,18 +917,20 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
                 </div>
 
                 <div>
-                  <label htmlFor="reserva-hora-fin">Hora de Fin *</label>
-                  <select
+                  <label htmlFor="reserva-hora-fin">Hora de Fin (automática)</label>
+                  <input
                     id="reserva-hora-fin"
-                    value={reservaHoraFin}
-                    onChange={(e) => setReservaHoraFin(e.target.value)}
-                  >
-                    {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'].map((h) => (
-                      <option key={h} value={h}>
-                        {h} hrs
-                      </option>
-                    ))}
-                  </select>
+                    type="text"
+                    disabled
+                    readOnly
+                    value={`${reservaHoraFin} hrs`}
+                    style={{
+                      backgroundColor: '#f1f5f9',
+                      color: '#475569',
+                      cursor: 'not-allowed',
+                      fontWeight: 600,
+                    }}
+                  />
                 </div>
               </div>
 
@@ -810,16 +949,16 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
               >
                 <div>
                   <div style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600 }}>
-                    Duración: {calcularHoras()} hora(s)
+                    Duración: {reservaBloqueHoras} hora(s)
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#15803d' }}>
-                    Calculado automáticamente por tarifa
+                    ${canchaReservar.precioPorHora.toLocaleString('es-CL')} × {reservaBloqueHoras} hr(s)
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '0.8rem', color: '#166534' }}>Total a Pagar</div>
                   <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#15803d' }}>
-                    ${(calcularHoras() * canchaReservar.precioPorHora).toLocaleString('es-CL')}
+                    ${(reservaBloqueHoras * canchaReservar.precioPorHora).toLocaleString('es-CL')}
                   </div>
                 </div>
               </div>
@@ -858,7 +997,7 @@ export const CanchasSection: React.FC<CanchasSectionProps> = ({
       )}
 
       {/* MODAL CREAR / EDITAR CANCHA (ADMINISTRATIVO) */}
-      {isModalOpen && canManage && (
+      {isModalOpen && puedeModificar && (
         <div className="portal-modal-backdrop" role="dialog" aria-modal="true">
           <div className="portal-modal-card">
             <div

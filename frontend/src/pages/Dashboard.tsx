@@ -49,6 +49,7 @@ export const Dashboard: React.FC = () => {
 
   // 2. Roles y permisos (Criterios 3 y 6 de Rúbrica)
   const isCliente = usuario?.rol === 'Cliente';
+  const isAdmin = usuario?.rol === 'Administrador';
   const canManage = usuario?.rol === 'Administrador' || usuario?.rol === 'Trabajador';
 
   // Funciones de carga por apartado
@@ -344,9 +345,11 @@ export const Dashboard: React.FC = () => {
               canchas={canchas}
               sedes={sedes}
               tiposCancha={tiposCancha}
+              reservas={reservas}
               isLoading={loadingCanchas}
               errorMessage={errorCanchas}
               canManage={canManage}
+              isAdmin={isAdmin}
               onRefresh={async () => {
                 await fetchCanchas();
                 await fetchReservas();
@@ -362,6 +365,7 @@ export const Dashboard: React.FC = () => {
               isLoading={loadingSedes}
               errorMessage={errorSedes}
               canManage={canManage}
+              isAdmin={isAdmin}
               onRefresh={async () => {
                 await fetchSedes();
                 await fetchCanchas();

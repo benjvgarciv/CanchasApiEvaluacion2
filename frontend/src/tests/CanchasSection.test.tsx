@@ -82,7 +82,7 @@ describe('CanchasSection Component', () => {
     expect(screen.getByRole('button', { name: /reservar/i })).toBeInTheDocument();
   });
 
-  it('los roles Administrador/Trabajador (canManage = true) SÍ ven los botones de gestión', () => {
+  it('el rol Administrador (canManage = true, isAdmin = true) SÍ ve los botones de gestión', () => {
     render(
       <CanchasSection
         canchas={mockCanchas}
@@ -90,7 +90,8 @@ describe('CanchasSection Component', () => {
         tiposCancha={mockTipos}
         isLoading={false}
         errorMessage={null}
-        canManage={true} // Rol Administrador o Trabajador
+        canManage={true}
+        isAdmin={true} // Rol Administrador
         onRefresh={vi.fn()}
         onNavigateToTab={vi.fn()}
       />
@@ -99,5 +100,25 @@ describe('CanchasSection Component', () => {
     expect(screen.getByRole('button', { name: /nueva cancha/i })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /editar/i }).length).toBe(2);
     expect(screen.getAllByRole('button', { name: /eliminar/i }).length).toBe(2);
+  });
+
+  it('el rol Trabajador (canManage = true, isAdmin = false) NO ve los botones de crear, editar ni eliminar', () => {
+    render(
+      <CanchasSection
+        canchas={mockCanchas}
+        sedes={mockSedes}
+        tiposCancha={mockTipos}
+        isLoading={false}
+        errorMessage={null}
+        canManage={true}
+        isAdmin={false} // Rol Trabajador
+        onRefresh={vi.fn()}
+        onNavigateToTab={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /nueva cancha/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /editar/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /eliminar/i })).not.toBeInTheDocument();
   });
 });

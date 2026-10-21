@@ -104,7 +104,7 @@ namespace CanchasApi.Endpoints
                     token = tokenString,
                     usuario = userResponse
                 });
-            });
+            }).RequireRateLimiting("login-policy");
 
             grupo.MapGet("/", async (IUsuarioRepository repo) =>
             {

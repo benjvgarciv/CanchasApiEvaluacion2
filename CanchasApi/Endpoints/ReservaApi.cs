@@ -233,14 +233,40 @@ namespace CanchasApi.Endpoints
 
                     if (request.TrabajadorId.HasValue)
                     {
-                        var trabajador = await db.Trabajadores.FindAsync(request.TrabajadorId.Value);
+                        var trabajador = await db.Trabajadores
+                            .Include(t => t.Usuario)
+                            .FirstOrDefaultAsync(t => t.Id == request.TrabajadorId.Value || t.UsuarioId == request.TrabajadorId.Value);
+
                         if (trabajador is null)
-                            return Results.BadRequest(new { error = "El trabajador especificado no existe." });
-                        reserva.TrabajadorId = request.TrabajadorId.Value;
+                        {
+                            // Si el usuario existe pero no tiene registro en Trabajadores aún, crearlo automáticamente
+                            var usuarioTrabajador = await db.Usuarios.FindAsync(request.TrabajadorId.Value);
+                            if (usuarioTrabajador != null && (usuarioTrabajador.Rol == "Trabajador" || usuarioTrabajador.Rol == "Administrador"))
+                            {
+                                trabajador = new Trabajador
+                                {
+                                    UsuarioId = usuarioTrabajador.Id,
+                                    Cargo = usuarioTrabajador.Rol,
+                                    Turno = "Completo"
+                                };
+                                db.Trabajadores.Add(trabajador);
+                                await db.SaveChangesAsync();
+                            }
+                        }
+
+                        if (trabajador != null)
+                        {
+                            reserva.TrabajadorId = trabajador.Id;
+                        }
                     }
                 }
 
                 await db.SaveChangesAsync();
+
+                if (reserva.TrabajadorId.HasValue)
+                {
+                    await db.Entry(reserva).Reference(r => r.Trabajador).Query().Include(t => t.Usuario).LoadAsync();
+                }
 
                 var response = new ReservaResponse(
                     reserva.Id,

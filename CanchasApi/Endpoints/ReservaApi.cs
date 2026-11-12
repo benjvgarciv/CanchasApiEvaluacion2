@@ -14,7 +14,7 @@ namespace CanchasApi.Endpoints
                 .WithTags("Reservas")
                 .RequireAuthorization();
 
-            grupo.MapGet("/", async (int? canchaId, string? estado, ReservasCanchasDbContext db, ClaimsPrincipal user) =>
+            grupo.MapGet("/", async (int? canchaId, string? estado, int? page, int? pageSize, ReservasCanchasDbContext db, ClaimsPrincipal user, HttpContext httpContext) =>
             {
                 var currentUserId = GetUserId(user);
                 var currentRole = user.FindFirst(ClaimTypes.Role)?.Value;
@@ -38,8 +38,40 @@ namespace CanchasApi.Endpoints
                 if (!string.IsNullOrWhiteSpace(estado))
                     query = query.Where(r => r.Estado == estado);
 
-                var reservas = await query
-                    .OrderByDescending(r => r.FechaInicio)
+                var totalCount = await query.CountAsync();
+                httpContext.Response.Headers["X-Total-Count"] = totalCount.ToString();
+
+                var orderedQuery = query.OrderByDescending(r => r.FechaInicio);
+
+                if (page.HasValue && page.Value > 0 && pageSize.HasValue && pageSize.Value > 0)
+                {
+                    var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize.Value);
+                    httpContext.Response.Headers["X-Page"] = page.Value.ToString();
+                    httpContext.Response.Headers["X-Page-Size"] = pageSize.Value.ToString();
+                    httpContext.Response.Headers["X-Total-Pages"] = totalPages.ToString();
+
+                    var pagedReservas = await orderedQuery
+                        .Skip((page.Value - 1) * pageSize.Value)
+                        .Take(pageSize.Value)
+                        .Select(r => new ReservaResponse(
+                            r.Id,
+                            r.UsuarioId,
+                            r.Usuario.Nombre,
+                            r.Usuario.Email,
+                            r.CanchaId,
+                            r.Cancha.Numero,
+                            r.TrabajadorId,
+                            r.Trabajador != null ? r.Trabajador.Usuario.Nombre : null,
+                            r.FechaInicio,
+                            r.FechaFin,
+                            r.Estado
+                        ))
+                        .ToListAsync();
+
+                    return Results.Ok(pagedReservas);
+                }
+
+                var reservas = await orderedQuery
                     .Select(r => new ReservaResponse(
                         r.Id,
                         r.UsuarioId,
@@ -187,6 +219,13 @@ namespace CanchasApi.Endpoints
 
                 if (reserva is null)
                     return Results.NotFound(new { error = "Reserva no encontrada." });
+
+                // Regla de transición de estados: estados terminales no se pueden reactivar ni alterar
+                if (reserva.Estado == "Cancelada")
+                    return Results.BadRequest(new { error = "No se puede modificar una reserva que ya ha sido cancelada." });
+
+                if (reserva.Estado == "Completada")
+                    return Results.BadRequest(new { error = "No se puede modificar una reserva que ya ha sido completada." });
 
                 if (currentRole == "Cliente")
                 {

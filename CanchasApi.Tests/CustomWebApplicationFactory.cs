@@ -8,6 +8,8 @@ namespace CanchasApi.Tests
 {
     public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     {
+        private static readonly Microsoft.EntityFrameworkCore.Storage.InMemoryDatabaseRoot _dbRoot = new();
+
         protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
             builder.ConfigureAppConfiguration((context, config) =>
@@ -22,28 +24,21 @@ namespace CanchasApi.Tests
 
             builder.ConfigureServices(services =>
             {
+                // Remover cualquier configuración previa de DbContext
                 var descriptors = services.Where(d =>
                     d.ServiceType == typeof(DbContextOptions<ReservasCanchasDbContext>) ||
                     d.ServiceType == typeof(DbContextOptions) ||
+                    d.ServiceType.Name.Contains("DbContextOptions") ||
                     d.ServiceType == typeof(ReservasCanchasDbContext)).ToList();
 
                 foreach (var descriptor in descriptors)
                     services.Remove(descriptor);
 
-                var inMemoryProvider = new ServiceCollection()
-                    .AddEntityFrameworkInMemoryDatabase()
-                    .BuildServiceProvider();
-
+                // Configurar InMemoryDatabase con raíz estática compartida para persistir datos entre peticiones del mismo test
                 services.AddDbContext<ReservasCanchasDbContext>(options =>
                 {
-                    options.UseInMemoryDatabase("CanchasApiTestsDb");
-                    options.UseInternalServiceProvider(inMemoryProvider);
+                    options.UseInMemoryDatabase("CanchasApiSharedTestDb", _dbRoot);
                 });
-
-                var sp = services.BuildServiceProvider();
-                using var scope = sp.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<ReservasCanchasDbContext>();
-                db.Database.EnsureCreated();
             });
         }
     }

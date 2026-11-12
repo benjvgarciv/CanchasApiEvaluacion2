@@ -11,7 +11,7 @@ namespace CanchasApi.Endpoints
         {
             var grupo = app.MapGroup("/api/v1/canchas").WithTags("Canchas");
 
-            grupo.MapGet("/", async (int? sedeId, int? tipoCanchaId, string? estado, ReservasCanchasDbContext db) =>
+            grupo.MapGet("/", async (int? sedeId, int? tipoCanchaId, string? estado, int? page, int? pageSize, ReservasCanchasDbContext db, HttpContext httpContext) =>
             {
                 var query = db.Canchas
                     .Include(c => c.Sede)
@@ -27,7 +27,37 @@ namespace CanchasApi.Endpoints
                 if (!string.IsNullOrWhiteSpace(estado))
                     query = query.Where(c => c.Estado == estado);
 
-                var canchas = await query
+                var totalCount = await query.CountAsync();
+                httpContext.Response.Headers["X-Total-Count"] = totalCount.ToString();
+
+                var orderedQuery = query.OrderBy(c => c.Numero);
+
+                if (page.HasValue && page.Value > 0 && pageSize.HasValue && pageSize.Value > 0)
+                {
+                    var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize.Value);
+                    httpContext.Response.Headers["X-Page"] = page.Value.ToString();
+                    httpContext.Response.Headers["X-Page-Size"] = pageSize.Value.ToString();
+                    httpContext.Response.Headers["X-Total-Pages"] = totalPages.ToString();
+
+                    var pagedCanchas = await orderedQuery
+                        .Skip((page.Value - 1) * pageSize.Value)
+                        .Take(pageSize.Value)
+                        .Select(c => new CanchaResponse(
+                            c.Id,
+                            c.Numero,
+                            c.SedeId,
+                            c.Sede.Nombre,
+                            c.TipoCanchaId,
+                            c.TipoCancha.Nombre,
+                            c.TipoCancha.PrecioPorHora,
+                            c.Estado
+                        ))
+                        .ToListAsync();
+
+                    return Results.Ok(pagedCanchas);
+                }
+
+                var canchas = await orderedQuery
                     .Select(c => new CanchaResponse(
                         c.Id,
                         c.Numero,
